@@ -4,7 +4,8 @@
 Generation of objective Question and answers through document
 
 ## Installation
-from transformers import T5Tokenizer, T5ForConditionalGeneration
+from transformers 
+import T5Tokenizer, T5ForConditionalGeneration
 from PyPDF2 import PdfReader
 from docx import Document
 import pytesseract
@@ -15,8 +16,8 @@ from PIL import Image
 - Dependencies: 
    - `transformers`
    - `torch`
-   - `gradio`
-   - `pytesseract`
+   - `gradio`:This model use for NLP Ui
+   - `pytesseract`:This model use for convert image into text (Q&A)
 
 ### Steps to Install
 
