@@ -1,0 +1,102 @@
+import gradio as gr
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+from PyPDF2 import PdfReader
+from docx import Document
+import pytesseract
+from PIL import Image
+import random
+
+# Load T5 model and tokenizer
+model_name = "t5-base"  # Use t5-large if resources allow
+tokenizer = T5Tokenizer.from_pretrained(model_name)
+model = T5ForConditionalGeneration.from_pretrained(model_name)
+
+# Step 1: Extract text from the document
+def extract_text(file):
+    text = ""
+    if file.name.endswith('.pdf'):
+        reader = PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text()
+    elif file.name.endswith('.docx'):
+        doc = Document(file)
+        for paragraph in doc.paragraphs:
+            text += paragraph.text + "\n"
+    elif file.name.endswith(('.png', '.jpg', '.jpeg')):
+        text = pytesseract.image_to_string(Image.open(file))
+    else:
+        raise ValueError("Unsupported file type. Upload PDF, DOCX, or image files.")
+    return text
+
+# Step 2: Split text into smaller chunks
+def split_text_into_chunks(text, max_length=400):
+    words = text.split()
+    return [' '.join(words[i:i+max_length]) for i in range(0, len(words), max_length)]
+
+# Step 3: Generate questions and options
+def generate_questions(chunk, num_return_sequences=1):
+    input_text = f"generate questions: {chunk}"
+    input_ids = tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
+    outputs = model.generate(input_ids, max_length=512, num_beams=5, num_return_sequences=num_return_sequences, early_stopping=True)
+    questions = [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+    return questions
+
+def generate_options(correct_answer, distractors_pool, num_options=4):
+    distractors = [d for d in distractors_pool if d != correct_answer]
+    random.shuffle(distractors)
+    options = distractors[:num_options - 1] + [correct_answer]
+    random.shuffle(options)
+    return options
+
+# Step 4: Process document to generate MCQs
+def process_document(file, num_questions_per_chunk=3):
+    extracted_text = extract_text(file)
+    chunks = split_text_into_chunks(extracted_text)
+    distractors_pool = ["An irrelevant fact", "A common misconception", "A related but incorrect idea", "A generic response"]
+    
+    all_qas = []
+    unique_questions = set()  # To avoid duplicate questions
+    
+    for chunk in chunks:
+        questions = generate_questions(chunk, num_return_sequences=num_questions_per_chunk)
+        for question in questions:
+            # Ensure the question is unique
+            if question not in unique_questions:
+                unique_questions.add(question)
+                correct_answer = "Example Answer"  # Replace with context-specific logic if available
+                options = generate_options(correct_answer, distractors_pool)
+                all_qas.append({"question": question, "answer": correct_answer, "options": options})
+    
+    return all_qas
+
+# Gradio Interface Function
+def generate_mcqs(file, num_questions):
+    try:
+        qa_pairs = process_document(file, num_questions_per_chunk=num_questions)
+        output = ""
+        for idx, qa in enumerate(qa_pairs, 1):
+            output += f"<h3 style='color: darkblue;'>Q{idx}: {qa['question']}</h3>"
+            for opt_idx, option in enumerate(qa['options'], 1):
+                output += f"<p style='margin-left: 20px; font-size: 16px;'>Option {opt_idx}: {option}</p>"
+            output += f"<p style='color: green; margin-left: 20px; font-size: 16px;'><b>Answer:</b> {qa['answer']}</p><br>"
+        return output
+    except Exception as e:
+        return f"<h3 style='color: red;'>Error:</h3> <p>{str(e)}</p>"
+
+# Gradio UI Layout
+with gr.Blocks() as demo:
+    gr.Markdown("<h1 style='color: teal;'>📄 Document-Based Question Generator</h1>")
+    gr.Markdown("<p style='color: gray;'>Upload a document (PDF, DOCX, or Image) and generate multiple-choice questions with answers. Customize the number of questions per chunk.</p>")
+    
+    with gr.Row():
+        with gr.Column():
+            file_input = gr.File(label="Upload Document")
+            num_questions = gr.Slider(label="Number of Questions per Chunk", minimum=1, maximum=5, value=3, step=1)
+            generate_btn = gr.Button("Generate Questions", variant="primary")
+        with gr.Column():
+            output = gr.HTML(label="Generated Questions")
+
+    generate_btn.click(fn=generate_mcqs, inputs=[file_input, num_questions], outputs=output)
+
+# Launch Gradio App
+demo.launch()
