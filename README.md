@@ -22,3 +22,4 @@ from PIL import Image
 
 1. Clone the repository:
    ```bash
+   https://github.com/sandeepsiripuram77/Genaration_Doc_Q-A.git
